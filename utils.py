@@ -29,12 +29,18 @@ def recall_at_k(relevance_scores, k, total_relevant): # Requires total number of
     return np.sum(relevance_scores) / total_relevant if total_relevant > 0 else 0.0
 
 def is_hit(recommended, history):
-    return int(any(item in history for item in recommended))
+    return sum(item in history for item in recommended)
 
 def calc_for_user(USER_ID, merged_behaviors, N, NUM_CYCLES, AT_K, env, model):
-
+    """
+    The evaluation uses the environment's simulator rewards as a proxy for relevance.
+    It adjusts these rewards based on ground truth: if a recommended item is in the non-clicked
+    impressions but receives a positive reward, its relevance is set to 0 (penalizing false positives);
+    if an item is in the clicked impressions but is assigned a zero reward, its relevance is corrected to 1.
+    """
     user_hist = merged_behaviors[merged_behaviors['user_id'] == USER_ID].iloc[0, 1].split()[-N:]
-    clicked_user_imressions = [i.split('-')[0] for i in merged_behaviors[merged_behaviors['user_id'] == USER_ID].iloc[0, 2].split() if int(i.split('-')[1])==1]
+    clicked_user_impressions = [i.split('-')[0] for i in merged_behaviors[merged_behaviors['user_id'] == USER_ID].iloc[0, 2].split() if int(i.split('-')[1]) == 1]
+    non_clicked_user_impressions = [i.split('-')[0] for i in merged_behaviors[merged_behaviors['user_id'] == USER_ID].iloc[0, 2].split() if int(i.split('-')[1]) == 0]
 
     obs = env.reset(user_hist)
 
@@ -43,12 +49,26 @@ def calc_for_user(USER_ID, merged_behaviors, N, NUM_CYCLES, AT_K, env, model):
         obs, rewards, dones, info = env.step(action)
 
     relevance_scores = env.rewards
-    total_relevant = sum(relevance_scores)
+    recommendations = env.recommended
 
-    ndcg = ndcg_at_k(relevance_scores, AT_K)
-    precision = precision_at_k(relevance_scores, AT_K)
-    recall = recall_at_k(relevance_scores, AT_K, total_relevant)
-    hit = is_hit(env.recommended, clicked_user_imressions)
+    adjusted_relevance = []
+    for score, item in zip(relevance_scores, recommendations):
+        # If the reward is 1 but the article is actually in the non-clicked impressions,
+        # consider this an error and set the relevance to 0.
+        if score == 1 and item in non_clicked_user_impressions:
+            adjusted_relevance.append(0)
+        # If the reward is 0 but the article is in the clicked impressions, correct it to 1.
+        elif score == 0 and item in clicked_user_impressions:
+            adjusted_relevance.append(1)
+        else:
+            adjusted_relevance.append(score)
+
+    total_relevant = sum(adjusted_relevance)
+
+    ndcg = ndcg_at_k(adjusted_relevance, AT_K)
+    precision = precision_at_k(adjusted_relevance, AT_K)
+    recall = recall_at_k(adjusted_relevance, AT_K, total_relevant)
+    hit = is_hit(recommendations, clicked_user_impressions)
 
     return ndcg, precision, recall, hit
 
