@@ -40,3 +40,7 @@ Additionally, the repo provides two demo notebooks for training:
 
 - one using a GRU-based environment with A2C.
 - one using the standard environment with DDPG.
+
+## Note
+
+If a Jupyter notebook in the /research folder doesn’t render properly on GitHub, you can view it using [nbviewer](https://nbviewer.org/). Just copy the notebook’s GitHub URL and paste it into the field on the nbviewer page.
